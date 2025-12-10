@@ -4,7 +4,7 @@
 
 **VisualMatmul** is an interactive 3D visualization tool for understanding Matrix Multiplication algorithms. Built with Python, PyQt6, and OpenGL (via pyqtgraph), it renders the computation space as a 3D cube, visualizing how different algorithms (Naive, Tiled) traverse and access data in the M, N, and K dimensions.
 
-![Screenshot](screenshot.png) *(Note: Add a screenshot here after running the app)*
+![Screenshot](screenshot.png)
 
 ## Features
 
