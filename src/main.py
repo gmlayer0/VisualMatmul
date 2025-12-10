@@ -11,6 +11,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("3D Matrix Multiplication Visualizer")
         self.resize(1200, 800)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()
 
         # Default Dims
         self.M = 12
@@ -127,7 +129,7 @@ class MainWindow(QMainWindow):
         self.N = self.spin_n.value()
         self.K = self.spin_k.value()
         
-        self.visualizer = Visualizer3D(self.M, self.N, self.K)
+        self.visualizer = Visualizer3D(self.M, self.N, self.K, key_event_callback=self.handle_visualizer_key)
         self.viz_layout.addWidget(self.visualizer)
         
         # Reset iterator
@@ -228,6 +230,27 @@ class MainWindow(QMainWindow):
             self.is_running = False
             self.lbl_status.setText("Finished")
             self.generator = None
+
+    def next_frame(self):
+        """Advance exactly one iteration step (used for F key)."""
+        if not self.generator:
+            self.start_new_simulation()
+        if self.generator:
+            self.step_animation()
+
+    def handle_visualizer_key(self, event):
+        self.keyPressEvent(event)
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == Qt.Key.Key_Space:
+            self.toggle_animation()
+        elif key == Qt.Key.Key_F:
+            if self.is_running:
+                self.toggle_animation()
+            self.next_frame()
+        else:
+            super().keyPressEvent(event)
 
 def main():
     app = QApplication(sys.argv)

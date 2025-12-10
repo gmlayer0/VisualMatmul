@@ -4,12 +4,15 @@ from PyQt6.QtGui import QColor, QVector3D
 from PyQt6.QtCore import Qt
 
 class Visualizer3D(gl.GLViewWidget):
-    def __init__(self, M, N, K, systolic_size=None):
+    def __init__(self, M, N, K, key_event_callback=None, systolic_size=None):
         super().__init__()
         self.M = M
         self.N = N
         self.K = K
         self.systolic_size = systolic_size
+        self.key_event_callback = key_event_callback
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()
         
         # Adjust camera to see A(left), B(right), C(top)
         self.setCameraPosition(distance=max(M, N, K) * 3.5, elevation=45, azimuth=135)
@@ -239,3 +242,9 @@ class Visualizer3D(gl.GLViewWidget):
         self.scatter_A.setData(color=np.tile(self.base_color_A, (len(self.proj_A_pos), 1)))
         self.scatter_B.setData(color=np.tile(self.base_color_B, (len(self.proj_B_pos), 1)))
         self.scatter_C.setData(color=np.tile(self.base_color_C, (len(self.proj_C_pos), 1)))
+
+    def keyPressEvent(self, event):
+        if self.key_event_callback:
+            self.key_event_callback(event)
+        else:
+            super().keyPressEvent(event)
