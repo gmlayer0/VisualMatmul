@@ -2,7 +2,7 @@
 
 [English](#english) | [中文](#chinese)
 
-**VisualMatmul** is an interactive 3D visualization tool for understanding Matrix Multiplication algorithms. Built with Python, PyQt6, and OpenGL (via pyqtgraph), it renders the computation space as a 3D cube, visualizing how different algorithms (Naive, Tiled) traverse and access data in the M, N, and K dimensions.
+**VisualMatmul** is an interactive 3D visualization tool for understanding Matrix Multiplication algorithms and hardware realizations such as systolic arrays and tensor cores. Built with Python, PyQt6, and OpenGL (via pyqtgraph), it renders the computation space as a 3D cube, visualizing how different algorithms (Naive, Tiled, and Systolic variants) traverse and access data in the M, N, and K dimensions.
 
 ![Screenshot](screenshot.png)
 
@@ -60,13 +60,16 @@ python src/main.py
 - **Algorithm**: Choose between Naive (different orders) or Tiled.
 - **Controls**: Click "Start" to begin the animation. Use the slider to adjust speed.
 - **View**: Drag left mouse button to rotate, right mouse button (or scroll) to zoom.
+- **Shortcuts**:
+  - `Space`: toggle play/pause.
+  - `F`: advance one frame while paused (also works directly from the visualization pane).
 
 ---
 
 <a id="chinese"></a>
 # VisualMatmul - 3D 矩阵乘法可视化工具
 
-**VisualMatmul** 是一个用于理解矩阵乘法算法的交互式 3D 可视化工具。基于 Python、PyQt6 和 OpenGL (pyqtgraph) 构建。它将计算过程渲染为一个 3D 立方体，直观地展示了不同算法（如朴素算法、分块算法）如何在 M、N、K 维度上遍历和访问数据。
+**VisualMatmul** 是一个用于理解矩阵乘法算法及其硬件实现（如脉动阵列、Tensor Core）的交互式 3D 可视化工具。基于 Python、PyQt6 和 OpenGL (pyqtgraph) 构建。它将计算过程渲染为一个 3D 立方体，直观地展示了不同算法（如朴素算法、分块算法和脉动变体）如何在 M、N、K 维度上遍历和访问数据。
 
 ## 功能特性
 
@@ -121,4 +124,7 @@ python src/main.py
 - **算法选择**: 选择 Naive（不同顺序）或 Tiled。
 - **控制**: 点击 "Start" 开始动画。使用滑块调整速度。
 - **视角**: 左键拖动旋转，右键拖动（或滚轮）缩放。
+- **快捷键**:
+  - `Space`: 播放/暂停。
+  - `F`: 在暂停状态下前进一步。
 
