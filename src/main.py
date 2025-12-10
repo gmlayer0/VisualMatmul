@@ -98,7 +98,7 @@ class MainWindow(QMainWindow):
         l = QLabel(label)
         layout.addWidget(l)
         s = QSpinBox()
-        s.setRange(1, 16) # Limit size for performance
+        s.setRange(1, 512) # Increased limit
         s.setValue(initial)
         s.valueChanged.connect(self.update_dims)
         layout.addWidget(s)
