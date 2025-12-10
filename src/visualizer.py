@@ -11,16 +11,20 @@ class Visualizer3D(gl.GLViewWidget):
         self.K = K
         
         self.setCameraPosition(distance=max(M, N, K) * 3, elevation=30, azimuth=45)
-        self.setBackgroundColor('k') # Black background
+        self.setBackgroundColor('w') # White background
 
         # Colors
-        self.color_default = (0.2, 0.2, 0.2, 0.1) # Translucent gray
-        self.color_active = (1.0, 1.0, 0.0, 0.8)  # Bright Yellow
-        self.color_done = (0.0, 1.0, 0.0, 0.6)    # Green
+        self.color_default = (0.6, 0.6, 0.6, 0.3) # Darker gray for visibility on white
+        self.color_active = (1.0, 0.5, 0.0, 0.9)  # Strong Orange
+        self.color_done = (0.0, 0.7, 0.0, 0.7)    # Medium Green
         
-        # Projection Colors
-        self.color_proj_A = (1.0, 0.0, 0.0, 0.5)  # Red for A (x-z)
-        self.color_proj_B = (0.0, 0.0, 1.0, 0.5)  # Blue for B (y-z)
+        # Projection Colors (Darker base for visibility)
+        self.base_color_A = (0.8, 0.0, 0.0, 0.3) # Darker Red base
+        self.base_color_B = (0.0, 0.0, 0.8, 0.3) # Darker Blue base
+        
+        # Highlight Colors
+        self.active_color_A = (1.0, 0.0, 0.0, 0.9) # Bright Opaque Red
+        self.active_color_B = (0.0, 0.0, 1.0, 0.9) # Bright Opaque Blue
         
         # Data storage for the main 3D volume
         # We will use GLScatterPlotItem with square points as an approximation for voxels 
@@ -77,7 +81,7 @@ class Visualizer3D(gl.GLViewWidget):
             for z in range(self.K):
                 # Place A visual at y = -2
                 self.proj_A_pos.append((x, -2, z))
-                self.proj_A_colors.append((0.5, 0.0, 0.0, 0.2))
+                self.proj_A_colors.append(self.base_color_A)
                 self.proj_A_map[(x, z)] = idx
                 idx += 1
         
@@ -87,6 +91,7 @@ class Visualizer3D(gl.GLViewWidget):
             size=0.8,
             pxMode=False
         )
+        self.scatter_A.setGLOptions('translucent')
         self.addItem(self.scatter_A)
         
         # B Projection (y-z plane), placed at x = -2
@@ -98,7 +103,7 @@ class Visualizer3D(gl.GLViewWidget):
             for z in range(self.K):
                 # Place B visual at x = -2
                 self.proj_B_pos.append((-2, y, z))
-                self.proj_B_colors.append((0.0, 0.0, 0.5, 0.2))
+                self.proj_B_colors.append(self.base_color_B)
                 self.proj_B_map[(y, z)] = idx
                 idx += 1
                 
@@ -108,6 +113,7 @@ class Visualizer3D(gl.GLViewWidget):
             size=0.8,
             pxMode=False
         )
+        self.scatter_B.setGLOptions('translucent')
         self.addItem(self.scatter_B)
 
     def setup_floor(self):
@@ -116,6 +122,7 @@ class Visualizer3D(gl.GLViewWidget):
         grid = gl.GLGridItem()
         grid.setSize(self.M, self.N, 1)
         grid.setSpacing(1, 1, 1)
+        # grid.setColor((0, 0, 0, 100)) # Black grid lines
         # Center the grid
         grid.translate(self.M/2 - 0.5, self.N/2 - 0.5, -1)
         self.addItem(grid)
@@ -156,15 +163,15 @@ class Visualizer3D(gl.GLViewWidget):
         
         # Update Projections
         # Reset projections to base color
-        new_A_colors = np.array([(0.5, 0.0, 0.0, 0.2)] * len(self.proj_A_pos))
-        new_B_colors = np.array([(0.0, 0.0, 0.5, 0.2)] * len(self.proj_B_pos))
+        new_A_colors = np.array([self.base_color_A] * len(self.proj_A_pos))
+        new_B_colors = np.array([self.base_color_B] * len(self.proj_B_pos))
         
         # Highlight active
         for idx in active_A_indices:
-            new_A_colors[idx] = (1.0, 0.2, 0.2, 0.9) # Bright Red
+            new_A_colors[idx] = self.active_color_A # Bright Red
             
         for idx in active_B_indices:
-            new_B_colors[idx] = (0.2, 0.2, 1.0, 0.9) # Bright Blue
+            new_B_colors[idx] = self.active_color_B # Bright Blue
             
         self.scatter_A.setData(color=new_A_colors)
         self.scatter_B.setData(color=new_B_colors)
@@ -172,6 +179,6 @@ class Visualizer3D(gl.GLViewWidget):
     def reset_simulation(self):
         self.colors = np.array([self.color_default] * len(self.positions))
         self.scatter.setData(color=self.colors)
-        self.scatter_A.setData(color=np.array([(0.5, 0.0, 0.0, 0.2)] * len(self.proj_A_pos)))
-        self.scatter_B.setData(color=np.array([(0.0, 0.0, 0.5, 0.2)] * len(self.proj_B_pos)))
+        self.scatter_A.setData(color=np.array([self.base_color_A] * len(self.proj_A_pos)))
+        self.scatter_B.setData(color=np.array([self.base_color_B] * len(self.proj_B_pos)))
 
