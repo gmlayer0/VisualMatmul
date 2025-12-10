@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QPushButton, QSlider, QGroupBox)
 from PyQt6.QtCore import QTimer, Qt
 from visualizer import Visualizer3D
-from iterators import NaiveIterator, TiledIterator, SystolicIterator, BlockedSystolicIterator
+from iterators import NaiveIterator, TiledIterator, SystolicIterator, BlockedSystolicIterator, TensorSystolicIterator
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -13,9 +13,9 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
 
         # Default Dims
-        self.M = 4
-        self.N = 4
-        self.K = 4
+        self.M = 16
+        self.N = 16
+        self.K = 16
         
         # State
         self.iterator = None
@@ -54,7 +54,14 @@ class MainWindow(QMainWindow):
         algo_layout = QVBoxLayout()
         
         self.combo_algo = QComboBox()
-        self.combo_algo.addItems(["Naive (ijk)", "Naive (ikj)", "Naive (jki)", "Tiled (2x2x2)", "Systolic Array (Wavefront)", "Blocked Systolic (4x4x4)"])
+        self.combo_algo.addItems([
+            "Naive (ijk)", 
+            "Naive (ikj)", 
+            "Naive (jki)", 
+            "Tensor Core (8x8x2)", 
+            "Blocked Systolic (4x4xFullK)",
+            "Tensor Core Systolic (4x4 array, 2x2x2 micro)"
+        ])
         algo_layout.addWidget(QLabel("Type:"))
         algo_layout.addWidget(self.combo_algo)
         
@@ -157,12 +164,14 @@ class MainWindow(QMainWindow):
         if "Naive" in algo_text:
             order = algo_text.split("(")[1].split(")")[0]
             self.iterator = NaiveIterator(self.M, self.N, self.K, order=order)
-        elif "Tiled" in algo_text:
-            self.iterator = TiledIterator(self.M, self.N, self.K, tile_size=2)
-        elif "Systolic Array" in algo_text:
-            self.iterator = SystolicIterator(self.M, self.N, self.K)
+        elif "Tensor Core (8x8x2)" in algo_text:
+            self.iterator = TiledIterator(self.M, self.N, self.K, tile_size=8, tile_k=2)
+        # elif "Systolic Array" in algo_text:
+        #     self.iterator = SystolicIterator(self.M, self.N, self.K)
         elif "Blocked Systolic" in algo_text:
             self.iterator = BlockedSystolicIterator(self.M, self.N, self.K, array_size=4)
+        elif "Tensor Core Systolic" in algo_text:
+            self.iterator = TensorSystolicIterator(self.M, self.N, self.K, array_size=4, micro_size=(2, 2, 2))
             
         self.generator = self.iterator.run()
 

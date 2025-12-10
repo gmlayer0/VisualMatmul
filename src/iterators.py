@@ -27,97 +27,52 @@ class NaiveIterator(MatrixIterator):
              raise ValueError("Order must be a permutation of 'ijk'")
 
     def run(self) -> Generator[IterationStep, None, None]:
-        # Map axes names to dimensions
         dims = {'i': self.M, 'j': self.N, 'k': self.K}
-        
-        # Ranges for each loop
         ranges = [range(dims[c]) for c in self.order]
-        
-        # Iterate based on order
         for idx0 in ranges[0]:
             for idx1 in ranges[1]:
                 for idx2 in ranges[2]:
-                    # Map back to i, j, k
-                    current_indices = {
-                        self.order[0]: idx0,
-                        self.order[1]: idx1,
-                        self.order[2]: idx2
-                    }
+                    current_indices = {self.order[0]: idx0, self.order[1]: idx1, self.order[2]: idx2}
                     i, j, k = current_indices['i'], current_indices['j'], current_indices['k']
-                    
-                    # x=i (M), y=j (N), z=k (K)
                     coord = (i, j, k)
-                    
-                    # Yield step: this block is active
                     yield IterationStep(active=[coord], completed=[], description=f"Calc C[{i},{j}] += A[{i},{k}]*B[{k},{j}]")
-                    
                     yield IterationStep(active=[], completed=[coord], description="Done")
 
 class TiledIterator(MatrixIterator):
-    def __init__(self, M: int, N: int, K: int, tile_size: int = 2):
+    def __init__(self, M: int, N: int, K: int, tile_size: int = 2, tile_k: int = 2):
         super().__init__(M, N, K)
         self.tile_size = tile_size
+        self.tile_k = tile_k
 
     def run(self) -> Generator[IterationStep, None, None]:
-        # Iterate over tiles
         for i_base in range(0, self.M, self.tile_size):
             for j_base in range(0, self.N, self.tile_size):
-                for k_base in range(0, self.K, self.tile_size):
-                    
-                    # Collect all coordinates in this tile
+                for k_base in range(0, self.K, self.tile_k):
                     active_coords = []
                     for i in range(i_base, min(i_base + self.tile_size, self.M)):
                         for j in range(j_base, min(j_base + self.tile_size, self.N)):
-                            for k in range(k_base, min(k_base + self.tile_size, self.K)):
+                            for k in range(k_base, min(k_base + self.tile_k, self.K)):
                                 active_coords.append((i, j, k))
-                    
                     if active_coords:
-                        yield IterationStep(
-                            active=active_coords, 
-                            completed=[],
-                            description=f"Processing Tile [{i_base}:{i_base+self.tile_size}, {j_base}:{j_base+self.tile_size}, {k_base}:{k_base+self.tile_size}]"
-                        )
-                        yield IterationStep(
-                            active=[], 
-                            completed=active_coords,
-                            description="Tile Done"
-                        )
+                        yield IterationStep(active=active_coords, completed=[], description=f"Processing Tile")
+                        yield IterationStep(active=[], completed=active_coords, description="Tile Done")
 
 class SystolicIterator(MatrixIterator):
     def __init__(self, M: int, N: int, K: int):
         super().__init__(M, N, K)
 
     def run(self) -> Generator[IterationStep, None, None]:
-        # Output Stationary Systolic Array Logic
-        # Time step t = i + j + k
-        # Max time steps = (M-1) + (N-1) + (K-1)
         max_time = (self.M - 1) + (self.N - 1) + (self.K - 1)
-        
         for t in range(max_time + 1):
             active_coords = []
-            
-            # Find all (i, j, k) such that i + j + k == t
-            # Optimization: Iterate over i and j, calculate k = t - i - j
-            # Valid if 0 <= k < K
-            
             for i in range(self.M):
                 for j in range(self.N):
                     k = t - i - j
                     if 0 <= k < self.K:
                         active_coords.append((i, j, k))
-            
             if active_coords:
-                yield IterationStep(
-                    active=active_coords,
-                    completed=[],
-                    description=f"Systolic Wavefront t={t}"
-                )
-                
-                yield IterationStep(
-                    active=[],
-                    completed=active_coords,
-                    description=f"Wavefront t={t} Done"
-                )
+                yield IterationStep(active=active_coords, completed=[], description=f"Systolic Wavefront t={t}")
+                yield IterationStep(active=[], completed=active_coords, description=f"Wavefront t={t} Done")
 
 class BlockedSystolicIterator(MatrixIterator):
     def __init__(self, M: int, N: int, K: int, array_size: int = 4):
@@ -126,36 +81,20 @@ class BlockedSystolicIterator(MatrixIterator):
 
     def run(self) -> Generator[IterationStep, None, None]:
         S = self.array_size
-        
-        # Pre-calculate blocks
         blocks = []
         for i_base in range(0, self.M, S):
             for j_base in range(0, self.N, S):
-                # K is not blocked (full K used)
                 M_curr = min(i_base + S, self.M) - i_base
                 N_curr = min(j_base + S, self.N) - j_base
                 K_curr = self.K
-                
-                blocks.append({
-                    'i_base': i_base,
-                    'j_base': j_base,
-                    'M_curr': M_curr,
-                    'N_curr': N_curr,
-                    'K_curr': K_curr
-                })
+                blocks.append({'i_base': i_base, 'j_base': j_base, 'M_curr': M_curr, 'N_curr': N_curr, 'K_curr': K_curr})
         
-        # Start time for each block
-        # Assuming pipeline: Block N+1 starts when Block N's PE(0,0) is free
         current_start_time = 0
         block_schedules = []
         for b in blocks:
-            block_schedules.append({
-                'block': b,
-                'start_time': current_start_time
-            })
+            block_schedules.append({'block': b, 'start_time': current_start_time})
             current_start_time += self.K 
             
-        # Global simulation loop
         if not block_schedules:
             return
             
@@ -166,12 +105,10 @@ class BlockedSystolicIterator(MatrixIterator):
         for t in range(max_global_time + 1):
             active_coords = []
             active_blocks_desc = []
-            
             for schedule in block_schedules:
                 start = schedule['start_time']
                 b = schedule['block']
                 local_t = t - start
-                
                 duration = (b['M_curr'] - 1) + (b['N_curr'] - 1) + (b['K_curr'] - 1)
                 
                 if 0 <= local_t <= duration:
@@ -183,19 +120,100 @@ class BlockedSystolicIterator(MatrixIterator):
                                 global_coord = (b['i_base'] + i_local, b['j_base'] + j_local, k_local)
                                 active_coords.append(global_coord)
                                 block_active = True
-                    
                     if block_active:
                          active_blocks_desc.append(f"[{b['i_base']}:{b['j_base']}]")
 
             if active_coords:
-                yield IterationStep(
-                    active=active_coords,
-                    completed=[],
-                    description=f"Global t={t}, Active Blocks: {', '.join(active_blocks_desc)}"
-                )
+                yield IterationStep(active=active_coords, completed=[], description=f"Global t={t}")
+                yield IterationStep(active=[], completed=active_coords, description="")
+
+class TensorSystolicIterator(MatrixIterator):
+    def __init__(self, M: int, N: int, K: int, array_size: int = 4, micro_size: Tuple[int, int, int] = (2, 2, 2)):
+        super().__init__(M, N, K)
+        self.array_size = array_size
+        self.micro_size = micro_size # (M2, N2, K2)
+
+    def run(self) -> Generator[IterationStep, None, None]:
+        S = self.array_size
+        M2, N2, K2 = self.micro_size
+        
+        # Calculate Macro Dimensions
+        # Number of micro-blocks in each dimension
+        M_macro = (self.M + M2 - 1) // M2
+        N_macro = (self.N + N2 - 1) // N2
+        K_macro = (self.K + K2 - 1) // K2
+        
+        # We reuse the Blocked Systolic Logic but on Macro Coordinates
+        # Instead of i_base stepping by S, we step by S (which is 4) in Macro Space.
+        # But wait, BlockedSystolic logic assumes 'array_size' is the tile size.
+        # Here, the 'Tile' in macro space is 4x4.
+        # So we iterate blocks of size 4x4 in the Macro Grid (M_macro x N_macro).
+        
+        # 1. Generate Block Schedules for Macro Grid
+        blocks = []
+        for i_macro_base in range(0, M_macro, S):
+            for j_macro_base in range(0, N_macro, S):
+                # Full K_macro used
+                M_curr_macro = min(i_macro_base + S, M_macro) - i_macro_base
+                N_curr_macro = min(j_macro_base + S, N_macro) - j_macro_base
+                K_curr_macro = K_macro
                 
-                yield IterationStep(
-                    active=[],
-                    completed=active_coords,
-                    description=""
-                )
+                blocks.append({
+                    'i_base': i_macro_base,
+                    'j_base': j_macro_base,
+                    'M_curr': M_curr_macro,
+                    'N_curr': N_curr_macro,
+                    'K_curr': K_curr_macro
+                })
+
+        current_start_time = 0
+        block_schedules = []
+        for b in blocks:
+            block_schedules.append({'block': b, 'start_time': current_start_time})
+            current_start_time += K_macro # Pipeline delay is K_macro cycles
+            
+        if not block_schedules:
+            return
+
+        last_block = block_schedules[-1]
+        last_duration = (last_block['block']['M_curr'] - 1) + (last_block['block']['N_curr'] - 1) + (last_block['block']['K_curr'] - 1)
+        max_global_time = last_block['start_time'] + last_duration + 1
+        
+        for t in range(max_global_time + 1):
+            active_coords = []
+            
+            for schedule in block_schedules:
+                start = schedule['start_time']
+                b = schedule['block']
+                local_t = t - start
+                duration = (b['M_curr'] - 1) + (b['N_curr'] - 1) + (b['K_curr'] - 1)
+                
+                if 0 <= local_t <= duration:
+                    # Iterate active macro coordinates in this block
+                    for i_local in range(b['M_curr']):
+                        for j_local in range(b['N_curr']):
+                            k_local = local_t - i_local - j_local
+                            if 0 <= k_local < b['K_curr']:
+                                # Macro coordinate:
+                                macro_i = b['i_base'] + i_local
+                                macro_j = b['j_base'] + j_local
+                                macro_k = k_local
+                                
+                                # Expand to Micro Coordinates
+                                # This macro block covers:
+                                # i: [macro_i*M2, (macro_i+1)*M2]
+                                # j: [macro_j*N2, (macro_j+1)*N2]
+                                # k: [macro_k*K2, (macro_k+1)*K2]
+                                
+                                i_start, i_end = macro_i * M2, min((macro_i + 1) * M2, self.M)
+                                j_start, j_end = macro_j * N2, min((macro_j + 1) * N2, self.N)
+                                k_start, k_end = macro_k * K2, min((macro_k + 1) * K2, self.K)
+                                
+                                for x in range(i_start, i_end):
+                                    for y in range(j_start, j_end):
+                                        for z in range(k_start, k_end):
+                                            active_coords.append((x, y, z))
+
+            if active_coords:
+                yield IterationStep(active=active_coords, completed=[], description=f"Tensor Core Step t={t}")
+                yield IterationStep(active=[], completed=active_coords, description="")
