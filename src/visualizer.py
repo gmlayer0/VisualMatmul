@@ -51,7 +51,7 @@ class Visualizer3D(gl.GLViewWidget):
         self.scatter = gl.GLScatterPlotItem(
             pos=self.positions,
             color=self.colors,
-            size=0.8,
+            size=0.5, # Smaller size for volume grid
             pxMode=False
         )
         self.scatter.setGLOptions('translucent')

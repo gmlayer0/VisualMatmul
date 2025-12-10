@@ -91,6 +91,12 @@ class MainWindow(QMainWindow):
         self.lbl_status.setWordWrap(True)
         play_layout.addWidget(self.lbl_status)
         
+        # Stats Labels
+        self.lbl_stats = QLabel("")
+        self.lbl_stats.setWordWrap(True)
+        self.lbl_stats.setStyleSheet("color: green; font-weight: bold;")
+        play_layout.addWidget(self.lbl_stats)
+        
         play_group.setLayout(play_layout)
         control_layout.addWidget(play_group)
         
@@ -154,11 +160,16 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         self.is_running = False
         self.generator = None
+        self.current_cycle = 0
+        self.total_macs = 0
         self.visualizer.reset_simulation()
         self.lbl_status.setText("Reset")
+        self.lbl_stats.setText("")
 
     def start_new_simulation(self):
         self.visualizer.reset_simulation()
+        self.current_cycle = 0
+        self.total_macs = 0
         algo_text = self.combo_algo.currentText()
         
         if "Naive" in algo_text:
@@ -181,6 +192,23 @@ class MainWindow(QMainWindow):
 
         try:
             step = next(self.generator)
+            
+            # Stats calculation
+            if step.active: # Only count cycles with activity (or count all steps?)
+                # Assuming 1 step = 1 cycle in this simulation
+                self.current_cycle += 1
+                macs_in_step = len(step.active)
+                self.total_macs += macs_in_step
+                
+                avg_ops = self.total_macs / self.current_cycle if self.current_cycle > 0 else 0
+                
+                stats_text = (
+                    f"Cycle: {self.current_cycle}\n"
+                    f"MACs this step: {macs_in_step}\n"
+                    f"Avg MACs/Cycle: {avg_ops:.2f}"
+                )
+                self.lbl_stats.setText(stats_text)
+
             self.visualizer.update_view(step.active, step.completed)
             self.lbl_status.setText(step.description)
         except StopIteration:
