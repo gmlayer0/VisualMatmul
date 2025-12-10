@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QPushButton, QSlider, QGroupBox)
 from PyQt6.QtCore import QTimer, Qt
 from visualizer import Visualizer3D
-from iterators import NaiveIterator, TiledIterator
+from iterators import NaiveIterator, TiledIterator, SystolicIterator, BlockedSystolicIterator
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -54,7 +54,7 @@ class MainWindow(QMainWindow):
         algo_layout = QVBoxLayout()
         
         self.combo_algo = QComboBox()
-        self.combo_algo.addItems(["Naive (ijk)", "Naive (ikj)", "Naive (jki)", "Tiled (2x2x2)"])
+        self.combo_algo.addItems(["Naive (ijk)", "Naive (ikj)", "Naive (jki)", "Tiled (2x2x2)", "Systolic Array (Wavefront)", "Blocked Systolic (4x4x4)"])
         algo_layout.addWidget(QLabel("Type:"))
         algo_layout.addWidget(self.combo_algo)
         
@@ -159,6 +159,10 @@ class MainWindow(QMainWindow):
             self.iterator = NaiveIterator(self.M, self.N, self.K, order=order)
         elif "Tiled" in algo_text:
             self.iterator = TiledIterator(self.M, self.N, self.K, tile_size=2)
+        elif "Systolic Array" in algo_text:
+            self.iterator = SystolicIterator(self.M, self.N, self.K)
+        elif "Blocked Systolic" in algo_text:
+            self.iterator = BlockedSystolicIterator(self.M, self.N, self.K, array_size=4)
             
         self.generator = self.iterator.run()
 

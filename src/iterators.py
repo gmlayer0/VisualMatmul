@@ -1,3 +1,4 @@
+import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Tuple, Generator
@@ -50,8 +51,6 @@ class NaiveIterator(MatrixIterator):
                     # Yield step: this block is active
                     yield IterationStep(active=[coord], completed=[], description=f"Calc C[{i},{j}] += A[{i},{k}]*B[{k},{j}]")
                     
-                    # In a simple view, after "processing", it's effectively "done" for this step
-                    # But strictly speaking, a block (i,j,k) represents one MAC (Multiply-Accumulate).
                     yield IterationStep(active=[], completed=[coord], description="Done")
 
 class TiledIterator(MatrixIterator):
@@ -84,3 +83,119 @@ class TiledIterator(MatrixIterator):
                             description="Tile Done"
                         )
 
+class SystolicIterator(MatrixIterator):
+    def __init__(self, M: int, N: int, K: int):
+        super().__init__(M, N, K)
+
+    def run(self) -> Generator[IterationStep, None, None]:
+        # Output Stationary Systolic Array Logic
+        # Time step t = i + j + k
+        # Max time steps = (M-1) + (N-1) + (K-1)
+        max_time = (self.M - 1) + (self.N - 1) + (self.K - 1)
+        
+        for t in range(max_time + 1):
+            active_coords = []
+            
+            # Find all (i, j, k) such that i + j + k == t
+            # Optimization: Iterate over i and j, calculate k = t - i - j
+            # Valid if 0 <= k < K
+            
+            for i in range(self.M):
+                for j in range(self.N):
+                    k = t - i - j
+                    if 0 <= k < self.K:
+                        active_coords.append((i, j, k))
+            
+            if active_coords:
+                yield IterationStep(
+                    active=active_coords,
+                    completed=[],
+                    description=f"Systolic Wavefront t={t}"
+                )
+                
+                yield IterationStep(
+                    active=[],
+                    completed=active_coords,
+                    description=f"Wavefront t={t} Done"
+                )
+
+class BlockedSystolicIterator(MatrixIterator):
+    def __init__(self, M: int, N: int, K: int, array_size: int = 4):
+        super().__init__(M, N, K)
+        self.array_size = array_size
+
+    def run(self) -> Generator[IterationStep, None, None]:
+        S = self.array_size
+        
+        # Pre-calculate blocks
+        blocks = []
+        for i_base in range(0, self.M, S):
+            for j_base in range(0, self.N, S):
+                # K is not blocked (full K used)
+                M_curr = min(i_base + S, self.M) - i_base
+                N_curr = min(j_base + S, self.N) - j_base
+                K_curr = self.K
+                
+                blocks.append({
+                    'i_base': i_base,
+                    'j_base': j_base,
+                    'M_curr': M_curr,
+                    'N_curr': N_curr,
+                    'K_curr': K_curr
+                })
+        
+        # Start time for each block
+        # Assuming pipeline: Block N+1 starts when Block N's PE(0,0) is free
+        current_start_time = 0
+        block_schedules = []
+        for b in blocks:
+            block_schedules.append({
+                'block': b,
+                'start_time': current_start_time
+            })
+            current_start_time += self.K 
+            
+        # Global simulation loop
+        if not block_schedules:
+            return
+            
+        last_block = block_schedules[-1]
+        last_duration = (last_block['block']['M_curr'] - 1) + (last_block['block']['N_curr'] - 1) + (last_block['block']['K_curr'] - 1)
+        max_global_time = last_block['start_time'] + last_duration + 1
+        
+        for t in range(max_global_time + 1):
+            active_coords = []
+            active_blocks_desc = []
+            
+            for schedule in block_schedules:
+                start = schedule['start_time']
+                b = schedule['block']
+                local_t = t - start
+                
+                duration = (b['M_curr'] - 1) + (b['N_curr'] - 1) + (b['K_curr'] - 1)
+                
+                if 0 <= local_t <= duration:
+                    block_active = False
+                    for i_local in range(b['M_curr']):
+                        for j_local in range(b['N_curr']):
+                            k_local = local_t - i_local - j_local
+                            if 0 <= k_local < b['K_curr']:
+                                global_coord = (b['i_base'] + i_local, b['j_base'] + j_local, k_local)
+                                active_coords.append(global_coord)
+                                block_active = True
+                    
+                    if block_active:
+                         active_blocks_desc.append(f"[{b['i_base']}:{b['j_base']}]")
+
+            if active_coords:
+                yield IterationStep(
+                    active=active_coords,
+                    completed=[],
+                    description=f"Global t={t}, Active Blocks: {', '.join(active_blocks_desc)}"
+                )
+                
+                yield IterationStep(
+                    active=[],
+                    completed=active_coords,
+                    description=""
+                )
