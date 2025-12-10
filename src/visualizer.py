@@ -20,9 +20,9 @@ class Visualizer3D(gl.GLViewWidget):
         
         # Orthographic projection for cleaner look
         self.opts['fov'] = 1
-        self.opts['distance'] = max(M, N, K) * 60
+        self.opts['distance'] = max(M, N, K) * 120
         
-        self.setBackgroundColor('#aaaaaa') # 淡灰色背景
+        self.setBackgroundColor('#ffffff') # 白色背景
 
         # Colors (NVIDIA-inspired palette)
         self.color_default = np.array([0.1, 0.1, 0.1, 0.05])    # Very subtle gray
@@ -45,8 +45,8 @@ class Visualizer3D(gl.GLViewWidget):
         self.active_color_C = np.array([0.0, 1.0, 0.8, 1])  # Bright Cyan
         
         # Cube size
-        self.cube_size = 0.7
-        self.quad_size = 0.85
+        self.cube_size = 0.5
+        self.quad_size = 0.95
         
         self.setup_volume_grid()
         self.setup_projections()
@@ -171,10 +171,11 @@ class Visualizer3D(gl.GLViewWidget):
         self.volume_mesh = gl.GLMeshItem(
             meshdata=mesh_data,
             smooth=False,
-            drawEdges=True,
-            edgeColor=(0.4, 0.4, 0.4, 0.3),
-            shader='shaded',
-            glOptions='translucent'
+            drawFaces=True,    # 是否绘制面 (默认True)
+            drawEdges=True,    # 是否绘制边 (默认False)
+            edgeColor=(0.5, 0.5, 0.5, 0.2),  # 边的颜色
+            shader='edgeHilight',   # 着色器类型，可选 'shaded', 'normalColor', 'edgeHilight', 等
+            glOptions='translucent'  # 透明度相关, 也可用 'opaque', 'additive' 等
         )
         self.addItem(self.volume_mesh)
 
@@ -203,8 +204,8 @@ class Visualizer3D(gl.GLViewWidget):
             meshdata=mesh_data_A,
             smooth=False,
             drawEdges=True,
-            edgeColor=(0.5, 0.2, 0.2, 0.4),
-            shader='shaded',
+            edgeColor=(0.6, 0.3, 0.3, 0.6),
+            shader=None,
             glOptions='translucent'
         )
         self.addItem(self.mesh_A)
@@ -230,8 +231,8 @@ class Visualizer3D(gl.GLViewWidget):
             meshdata=mesh_data_B,
             smooth=False,
             drawEdges=True,
-            edgeColor=(0.2, 0.2, 0.5, 0.4),
-            shader='shaded',
+            edgeColor=(0.3, 0.3, 0.6, 0.6),
+            shader=None,
             glOptions='translucent'
         )
         self.addItem(self.mesh_B)
@@ -258,8 +259,8 @@ class Visualizer3D(gl.GLViewWidget):
             meshdata=mesh_data_C,
             smooth=False,
             drawEdges=True,
-            edgeColor=(0.2, 0.4, 0.4, 0.4),
-            shader='shaded',
+            edgeColor=(0.3, 0.5, 0.5, 0.6),
+            shader=None,
             glOptions='translucent'
         )
         self.addItem(self.mesh_C)
