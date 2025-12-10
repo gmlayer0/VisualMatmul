@@ -4,29 +4,39 @@ from PyQt6.QtGui import QColor, QVector3D
 from PyQt6.QtCore import Qt
 
 class Visualizer3D(gl.GLViewWidget):
-    def __init__(self, M, N, K):
+    def __init__(self, M, N, K, systolic_size=None):
         super().__init__()
         self.M = M
         self.N = N
         self.K = K
+        self.systolic_size = systolic_size
         
         # Adjust camera to see A(left), B(right), C(top)
         self.setCameraPosition(distance=max(M, N, K) * 3.5, elevation=45, azimuth=135)
+        
+        # Set Orthographic Projection (Pseudo)
+        # self.opts['fov'] = 1  
+        # self.opts['distance'] = max(M, N, K) * 100 
+        
         self.setBackgroundColor('w') # White background
 
         # Colors
-        self.color_default = (0.6, 0.6, 0.6, 0.3) # Darker gray for visibility on white
+        self.color_default = (0.6, 0.6, 0.6, 0.3) 
         self.color_active = (1.0, 0.5, 0.0, 0.9)  # Strong Orange
         self.color_done = (0.0, 0.7, 0.0, 0.7)    # Medium Green
         
         # Projection Colors (Darker base for visibility)
-        self.base_color_A = (0.8, 0.0, 0.0, 0.3) # Darker Red base
-        self.base_color_B = (0.0, 0.0, 0.8, 0.3) # Darker Blue base
-        self.base_color_C = (0.0, 0.6, 0.6, 0.3) # Cyan/Teal base for C
+        self.base_color_A = (0.8, 0.0, 0.0, 0.3) 
+        self.base_color_B = (0.0, 0.0, 0.8, 0.3) 
+        self.base_color_C = (0.0, 0.6, 0.6, 0.3) 
         
         # Highlight Colors
-        self.active_color_A = (1.0, 0.0, 0.0, 0.9) # Bright Opaque Red
-        self.active_color_B = (0.0, 0.0, 1.0, 0.9) # Bright Opaque Blue
+        self.active_color_A = (1.0, 0.0, 0.0, 0.9) # Bright Red (Direct)
+        self.active_color_B = (0.0, 0.0, 1.0, 0.9) # Bright Blue (Direct)
+        
+        self.transferred_color_A = (0.8, 0.5, 0.5, 0.9) # Lighter Red (Transferred)
+        self.transferred_color_B = (0.5, 0.5, 0.8, 0.9) # Lighter Blue (Transferred)
+        
         self.active_color_C = (0.0, 1.0, 1.0, 0.9) # Bright Cyan
         
         self.setup_volume_grid()
@@ -51,7 +61,7 @@ class Visualizer3D(gl.GLViewWidget):
         self.scatter = gl.GLScatterPlotItem(
             pos=self.positions,
             color=self.colors,
-            size=0.5, # Smaller size for volume grid
+            size=0.3, # Smaller size for volume grid
             pxMode=False
         )
         self.scatter.setGLOptions('translucent')
@@ -147,8 +157,12 @@ class Visualizer3D(gl.GLViewWidget):
         # Prepare frame colors
         current_colors = self.colors.copy()
         
-        active_A_indices = []
-        active_B_indices = []
+        active_A_indices_direct = []
+        active_A_indices_transferred = []
+        
+        active_B_indices_direct = []
+        active_B_indices_transferred = []
+        
         active_C_indices = []
         
         for x, y, z in active_blocks:
@@ -156,31 +170,55 @@ class Visualizer3D(gl.GLViewWidget):
             if 0 <= idx < len(current_colors):
                 current_colors[idx] = self.color_active
             
-            # Projections
-            active_A_indices.append(self.get_A_index(x, z))
-            active_B_indices.append(self.get_B_index(y, z))
+            # Determine source type for A and B
+            # A source logic:
+            # If j % systolic_size == 0, direct. Else transferred.
+            # Default to direct if systolic_size is None
+            
+            # A (Row flow): depends on column index y (which is j)
+            if self.systolic_size and (y % self.systolic_size != 0):
+                active_A_indices_transferred.append(self.get_A_index(x, z))
+            else:
+                active_A_indices_direct.append(self.get_A_index(x, z))
+                
+            # B (Col flow): depends on row index x (which is i)
+            if self.systolic_size and (x % self.systolic_size != 0):
+                active_B_indices_transferred.append(self.get_B_index(y, z))
+            else:
+                active_B_indices_direct.append(self.get_B_index(y, z))
+
             active_C_indices.append(self.get_C_index(x, y))
                 
         self.scatter.setData(color=current_colors)
         
         # Update A Projection
         new_A = np.tile(self.base_color_A, (len(self.proj_A_pos), 1))
-        if active_A_indices:
-            idx_arr = np.array(active_A_indices)
-            valid_mask = (idx_arr >= 0) & (idx_arr < len(new_A))
-            valid_idx = idx_arr[valid_mask]
-            if len(valid_idx) > 0:
-                 new_A[valid_idx] = self.active_color_A
+        
+        if active_A_indices_transferred:
+             idx_arr = np.array(active_A_indices_transferred)
+             valid_mask = (idx_arr >= 0) & (idx_arr < len(new_A))
+             new_A[idx_arr[valid_mask]] = self.transferred_color_A
+             
+        if active_A_indices_direct:
+             idx_arr = np.array(active_A_indices_direct)
+             valid_mask = (idx_arr >= 0) & (idx_arr < len(new_A))
+             new_A[idx_arr[valid_mask]] = self.active_color_A
+             
         self.scatter_A.setData(color=new_A)
         
         # Update B Projection
         new_B = np.tile(self.base_color_B, (len(self.proj_B_pos), 1))
-        if active_B_indices:
-            idx_arr = np.array(active_B_indices)
-            valid_mask = (idx_arr >= 0) & (idx_arr < len(new_B))
-            valid_idx = idx_arr[valid_mask]
-            if len(valid_idx) > 0:
-                 new_B[valid_idx] = self.active_color_B
+        
+        if active_B_indices_transferred:
+             idx_arr = np.array(active_B_indices_transferred)
+             valid_mask = (idx_arr >= 0) & (idx_arr < len(new_B))
+             new_B[idx_arr[valid_mask]] = self.transferred_color_B
+             
+        if active_B_indices_direct:
+             idx_arr = np.array(active_B_indices_direct)
+             valid_mask = (idx_arr >= 0) & (idx_arr < len(new_B))
+             new_B[idx_arr[valid_mask]] = self.active_color_B
+             
         self.scatter_B.setData(color=new_B)
 
         # Update C Projection

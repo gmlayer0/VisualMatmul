@@ -167,10 +167,22 @@ class MainWindow(QMainWindow):
         self.lbl_stats.setText("")
 
     def start_new_simulation(self):
+        algo_text = self.combo_algo.currentText()
+        
+        # Determine systolic size for visualization
+        systolic_size = None
+        if "Blocked Systolic" in algo_text:
+             systolic_size = 16 # Based on the label 16x16
+        elif "Tensor Core Systolic" in algo_text:
+             systolic_size = 4 # Based on 4x4 array
+        elif "Tensor Core (8x8" in algo_text:
+             systolic_size = 8 # Tiled acts like block
+             
+        self.visualizer.systolic_size = systolic_size
         self.visualizer.reset_simulation()
+        
         self.current_cycle = 0
         self.total_macs = 0
-        algo_text = self.combo_algo.currentText()
         
         if "Naive" in algo_text:
             order = algo_text.split("(")[1].split(")")[0]
