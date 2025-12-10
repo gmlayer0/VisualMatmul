@@ -14,13 +14,16 @@ class Visualizer3D(gl.GLViewWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFocus()
         
-        # NVIDIA-style camera angle (isometric-like, looking from front-right-top)
-        # This gives a good view of A (left wall), B (back wall), C (top), and the 3D volume
-        self.setCameraPosition(distance=max(M, N, K) * 2.8, elevation=25, azimuth=-50)
+        # NVIDIA-style camera angle (isometric, looking from front-right-top)
+        # Clear view of A (left wall), B (back wall), C (top), and the 3D volume
+        self.setCameraPosition(elevation=30, azimuth=45)
+        
+        # Set view center to the center of the cube
+        self.opts['center'] = QVector3D(M / 2 - 0.5, N / 2 - 0.5, K / 2 - 0.75)
         
         # Orthographic projection for cleaner look
         self.opts['fov'] = 1
-        self.opts['distance'] = max(M, N, K) * 120
+        self.opts['distance'] = max(M, N, K) * 210
         
         self.setBackgroundColor('#ffffff') # 白色背景
 
@@ -45,7 +48,7 @@ class Visualizer3D(gl.GLViewWidget):
         self.active_color_C = np.array([0.0, 1.0, 0.8, 1])  # Bright Cyan
         
         # Cube size
-        self.cube_size = 0.5
+        self.cube_size = 0.65
         self.quad_size = 0.95
         
         self.setup_volume_grid()
@@ -183,11 +186,11 @@ class Visualizer3D(gl.GLViewWidget):
         return x * (self.N * self.K) + y * self.K + z
 
     def setup_projections(self):
-        # A Projection: x-z plane, y fixed at -1.5
+        # A Projection: x-z plane, y fixed at -3 (further from cube)
         grid_A = np.indices((self.M, self.K))
         x_A = grid_A[0].ravel().astype(np.float32)
         z_A = grid_A[1].ravel().astype(np.float32)
-        y_A = np.full_like(x_A, -1.5)
+        y_A = np.full_like(x_A, -3)
         self.proj_A_pos = np.stack((x_A, y_A, z_A), axis=1)
         
         self.proj_A_verts, self.proj_A_faces = self.create_quad_mesh_data(
@@ -210,11 +213,11 @@ class Visualizer3D(gl.GLViewWidget):
         )
         self.addItem(self.mesh_A)
         
-        # B Projection: y-z plane, x fixed at -1.5
+        # B Projection: y-z plane, x fixed at -3 (further from cube)
         grid_B = np.indices((self.N, self.K))
         y_B = grid_B[0].ravel().astype(np.float32)
         z_B = grid_B[1].ravel().astype(np.float32)
-        x_B = np.full_like(y_B, -1.5)
+        x_B = np.full_like(y_B, -3)
         self.proj_B_pos = np.stack((x_B, y_B, z_B), axis=1)
         
         self.proj_B_verts, self.proj_B_faces = self.create_quad_mesh_data(
@@ -238,11 +241,11 @@ class Visualizer3D(gl.GLViewWidget):
         self.addItem(self.mesh_B)
     
     def setup_ceiling_C(self):
-        # C Projection: x-y plane, z fixed at K + 0.5
+        # C Projection: x-y plane, z fixed at -3 (below the cube, further away)
         grid_C = np.indices((self.M, self.N))
         x_C = grid_C[0].ravel().astype(np.float32)
         y_C = grid_C[1].ravel().astype(np.float32)
-        z_C = np.full_like(x_C, self.K + 0.5)
+        z_C = np.full_like(x_C, -3)
         self.proj_C_pos = np.stack((x_C, y_C, z_C), axis=1)
         
         self.proj_C_verts, self.proj_C_faces = self.create_quad_mesh_data(
