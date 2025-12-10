@@ -83,7 +83,7 @@ class MainWindow(QMainWindow):
         play_layout.addWidget(QLabel("Speed (ms delay):"))
         self.slider_speed = QSlider(Qt.Orientation.Horizontal)
         self.slider_speed.setRange(10, 1000)
-        self.slider_speed.setValue(100)
+        self.slider_speed.setValue(250)
         self.slider_speed.valueChanged.connect(self.update_speed)
         play_layout.addWidget(self.slider_speed)
         

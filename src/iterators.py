@@ -45,6 +45,7 @@ class TiledIterator(MatrixIterator):
         self.tile_k = tile_k
 
     def run(self) -> Generator[IterationStep, None, None]:
+        completed_coords = []
         for i_base in range(0, self.M, self.tile_size):
             for j_base in range(0, self.N, self.tile_size):
                 for k_base in range(0, self.K, self.tile_k):
@@ -54,8 +55,12 @@ class TiledIterator(MatrixIterator):
                             for k in range(k_base, min(k_base + self.tile_k, self.K)):
                                 active_coords.append((i, j, k))
                     if active_coords:
-                        yield IterationStep(active=active_coords, completed=[], description=f"Processing Tile")
-                        yield IterationStep(active=[], completed=active_coords, description="Tile Done")
+                        yield IterationStep(active=active_coords, completed=completed_coords, description=f"Processing Tile")
+                        completed_coords = active_coords
+        
+        # Flush last
+        if completed_coords:
+            yield IterationStep(active=[], completed=completed_coords, description="Done")
 
 class SystolicIterator(MatrixIterator):
     def __init__(self, M: int, N: int, K: int):
@@ -63,6 +68,7 @@ class SystolicIterator(MatrixIterator):
 
     def run(self) -> Generator[IterationStep, None, None]:
         max_time = (self.M - 1) + (self.N - 1) + (self.K - 1)
+        completed_coords = []
         for t in range(max_time + 1):
             active_coords = []
             for i in range(self.M):
@@ -71,8 +77,11 @@ class SystolicIterator(MatrixIterator):
                     if 0 <= k < self.K:
                         active_coords.append((i, j, k))
             if active_coords:
-                yield IterationStep(active=active_coords, completed=[], description=f"Systolic Wavefront t={t}")
-                yield IterationStep(active=[], completed=active_coords, description=f"Wavefront t={t} Done")
+                yield IterationStep(active=active_coords, completed=completed_coords, description=f"Systolic Wavefront t={t}")
+                completed_coords = active_coords
+        
+        if completed_coords:
+            yield IterationStep(active=[], completed=completed_coords, description="Done")
 
 class BlockedSystolicIterator(MatrixIterator):
     def __init__(self, M: int, N: int, K: int, array_size: int = 4):
@@ -102,6 +111,8 @@ class BlockedSystolicIterator(MatrixIterator):
         last_duration = (last_block['block']['M_curr'] - 1) + (last_block['block']['N_curr'] - 1) + (last_block['block']['K_curr'] - 1)
         max_global_time = last_block['start_time'] + last_duration + 1
         
+        completed_coords = []
+        
         for t in range(max_global_time + 1):
             active_coords = []
             active_blocks_desc = []
@@ -124,8 +135,15 @@ class BlockedSystolicIterator(MatrixIterator):
                          active_blocks_desc.append(f"[{b['i_base']}:{b['j_base']}]")
 
             if active_coords:
-                yield IterationStep(active=active_coords, completed=[], description=f"Global t={t}")
-                yield IterationStep(active=[], completed=active_coords, description="")
+                yield IterationStep(
+                    active=active_coords, 
+                    completed=completed_coords, 
+                    description=f"Global t={t}, Active Blocks: {', '.join(active_blocks_desc)}"
+                )
+                completed_coords = active_coords
+            elif completed_coords:
+                 yield IterationStep(active=[], completed=completed_coords, description="Finishing...")
+                 completed_coords = []
 
 class TensorSystolicIterator(MatrixIterator):
     def __init__(self, M: int, N: int, K: int, array_size: int = 4, micro_size: Tuple[int, int, int] = (2, 2, 2)):
@@ -137,23 +155,13 @@ class TensorSystolicIterator(MatrixIterator):
         S = self.array_size
         M2, N2, K2 = self.micro_size
         
-        # Calculate Macro Dimensions
-        # Number of micro-blocks in each dimension
         M_macro = (self.M + M2 - 1) // M2
         N_macro = (self.N + N2 - 1) // N2
         K_macro = (self.K + K2 - 1) // K2
         
-        # We reuse the Blocked Systolic Logic but on Macro Coordinates
-        # Instead of i_base stepping by S, we step by S (which is 4) in Macro Space.
-        # But wait, BlockedSystolic logic assumes 'array_size' is the tile size.
-        # Here, the 'Tile' in macro space is 4x4.
-        # So we iterate blocks of size 4x4 in the Macro Grid (M_macro x N_macro).
-        
-        # 1. Generate Block Schedules for Macro Grid
         blocks = []
         for i_macro_base in range(0, M_macro, S):
             for j_macro_base in range(0, N_macro, S):
-                # Full K_macro used
                 M_curr_macro = min(i_macro_base + S, M_macro) - i_macro_base
                 N_curr_macro = min(j_macro_base + S, N_macro) - j_macro_base
                 K_curr_macro = K_macro
@@ -170,7 +178,7 @@ class TensorSystolicIterator(MatrixIterator):
         block_schedules = []
         for b in blocks:
             block_schedules.append({'block': b, 'start_time': current_start_time})
-            current_start_time += K_macro # Pipeline delay is K_macro cycles
+            current_start_time += K_macro 
             
         if not block_schedules:
             return
@@ -178,6 +186,8 @@ class TensorSystolicIterator(MatrixIterator):
         last_block = block_schedules[-1]
         last_duration = (last_block['block']['M_curr'] - 1) + (last_block['block']['N_curr'] - 1) + (last_block['block']['K_curr'] - 1)
         max_global_time = last_block['start_time'] + last_duration + 1
+        
+        completed_coords = []
         
         for t in range(max_global_time + 1):
             active_coords = []
@@ -189,21 +199,13 @@ class TensorSystolicIterator(MatrixIterator):
                 duration = (b['M_curr'] - 1) + (b['N_curr'] - 1) + (b['K_curr'] - 1)
                 
                 if 0 <= local_t <= duration:
-                    # Iterate active macro coordinates in this block
                     for i_local in range(b['M_curr']):
                         for j_local in range(b['N_curr']):
                             k_local = local_t - i_local - j_local
                             if 0 <= k_local < b['K_curr']:
-                                # Macro coordinate:
                                 macro_i = b['i_base'] + i_local
                                 macro_j = b['j_base'] + j_local
                                 macro_k = k_local
-                                
-                                # Expand to Micro Coordinates
-                                # This macro block covers:
-                                # i: [macro_i*M2, (macro_i+1)*M2]
-                                # j: [macro_j*N2, (macro_j+1)*N2]
-                                # k: [macro_k*K2, (macro_k+1)*K2]
                                 
                                 i_start, i_end = macro_i * M2, min((macro_i + 1) * M2, self.M)
                                 j_start, j_end = macro_j * N2, min((macro_j + 1) * N2, self.N)
@@ -215,5 +217,8 @@ class TensorSystolicIterator(MatrixIterator):
                                             active_coords.append((x, y, z))
 
             if active_coords:
-                yield IterationStep(active=active_coords, completed=[], description=f"Tensor Core Step t={t}")
-                yield IterationStep(active=[], completed=active_coords, description="")
+                yield IterationStep(active=active_coords, completed=completed_coords, description=f"Tensor Core Step t={t}")
+                completed_coords = active_coords
+            elif completed_coords:
+                yield IterationStep(active=[], completed=completed_coords, description="Finishing...")
+                completed_coords = []

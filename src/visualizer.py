@@ -34,8 +34,9 @@ class Visualizer3D(gl.GLViewWidget):
         self.active_color_A = (1.0, 0.0, 0.0, 0.9) # Bright Red (Direct)
         self.active_color_B = (0.0, 0.0, 1.0, 0.9) # Bright Blue (Direct)
         
-        self.transferred_color_A = (0.8, 0.5, 0.5, 0.9) # Lighter Red (Transferred)
-        self.transferred_color_B = (0.5, 0.5, 0.8, 0.9) # Lighter Blue (Transferred)
+        # Transferred colors: Darker/Different hue for better visibility on white
+        self.transferred_color_A = (0.5, 0.3, 0.0, 0.9) # Darker/Orange-ish Red
+        self.transferred_color_B = (0.0, 0.5, 0.8, 0.9) # Teal-ish Blue
         
         self.active_color_C = (0.0, 1.0, 1.0, 0.9) # Bright Cyan
         
