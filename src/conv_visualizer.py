@@ -312,7 +312,10 @@ class ConvVisualizer3D(gl.GLViewWidget):
         mesh_item.setMeshData(meshdata=mesh_data)
 
     def update_view(self, step):
-        """Update visualization based on ConvIterationStep."""
+        """Update visualization based on ConvIterationStep.
+
+        Only highlights elements active in THIS cycle (no accumulation).
+        """
 
         # Update Tensor Core MACs
         for m, n, k in step.completed_macs:
@@ -329,34 +332,37 @@ class ConvVisualizer3D(gl.GLViewWidget):
         tc_face_colors = np.repeat(tc_current, 12, axis=0)
         self.update_mesh_colors(self.tc_mesh, self.tc_verts, self.tc_faces, tc_face_colors)
 
-        # Update Input Volume - use coord_map for reliability
+        # Update Input Volume - start fresh from base each time
+        input_current = np.tile(self.base_color_input, (len(self.input_positions), 1))
         for h, w, c in step.active_input:
             key = (h, w, c)
             if key in self.input_coord_map:
                 idx = self.input_coord_map[key]
-                self.input_colors_state[idx] = self.active_color_input
+                input_current[idx] = self.active_color_input
 
-        input_face_colors = np.repeat(self.input_colors_state, 12, axis=0)
+        input_face_colors = np.repeat(input_current, 12, axis=0)
         self.update_mesh_colors(self.input_mesh, self.input_verts, self.input_faces, input_face_colors)
 
-        # Update Kernel Volume
+        # Update Kernel Volume - start fresh each time
+        kernel_current = np.tile(self.base_color_kernel, (len(self.kernel_positions), 1))
         for kh, kw, ci, co in step.active_kernel:
             key = (kh, kw, ci, co)
             if key in self.kernel_coord_map:
                 idx = self.kernel_coord_map[key]
-                self.kernel_colors_state[idx] = self.active_color_kernel
+                kernel_current[idx] = self.active_color_kernel
 
-        kernel_face_colors = np.repeat(self.kernel_colors_state, 12, axis=0)
+        kernel_face_colors = np.repeat(kernel_current, 12, axis=0)
         self.update_mesh_colors(self.kernel_mesh, self.kernel_verts, self.kernel_faces, kernel_face_colors)
 
-        # Update Output Volume
+        # Update Output Volume - start fresh each time
+        output_current = np.tile(self.base_color_output, (len(self.output_positions), 1))
         for oh, ow, co in step.active_output:
             key = (oh, ow, co)
             if key in self.output_coord_map:
                 idx = self.output_coord_map[key]
-                self.output_colors_state[idx] = self.active_color_output
+                output_current[idx] = self.active_color_output
 
-        output_face_colors = np.repeat(self.output_colors_state, 12, axis=0)
+        output_face_colors = np.repeat(output_current, 12, axis=0)
         self.update_mesh_colors(self.output_mesh, self.output_verts, self.output_faces, output_face_colors)
 
     def reset_simulation(self):
