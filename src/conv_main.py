@@ -5,33 +5,35 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import QTimer, Qt
 from conv_visualizer import ConvVisualizer3D
 from conv_iterators import (
-    ConvIterationStep,
-    OutputStationaryIterator,
-    OutputStationarySystolicIterator,
-    WeightStationaryIterator,
-    WeightStationarySystolicIterator,
-    InputStationaryIterator,
-    InputStationarySystolicIterator,
-    RowStationaryIterator,
-    RowStationarySystolicIterator
+    TensorCoreOutputStationaryIterator,
+    TensorCoreWeightStationaryIterator,
+    TensorCoreInputStationaryIterator,
+    TensorCoreSystolicIterator
 )
 
 
 class ConvMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("2D Convolution on Dot Product Array - Visualizer")
-        self.resize(1400, 900)
+        self.setWindowTitle("2D Convolution on Tensor Core - Visualizer")
+        self.resize(1600, 1000)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFocus()
 
         # Default dimensions
-        self.H = 8   # Input height
-        self.W = 8   # Input width
-        self.KH = 3   # Kernel height
-        self.KW = 3   # Kernel width
+        self.H = 6       # Input height
+        self.W = 6       # Input width
+        self.C_in = 4    # Input channels
+        self.C_out = 4   # Output channels
+        self.KH = 2      # Kernel height
+        self.KW = 2      # Kernel width
         self.stride = 1
         self.padding = 0
+
+        # Tensor Core dimensions
+        self.TC_M = 8
+        self.TC_N = 4
+        self.TC_K = 8
 
         # State
         self.iterator = None
@@ -51,22 +53,24 @@ class ConvMainWindow(QMainWindow):
         # Left: Controls
         control_panel = QWidget()
         control_layout = QVBoxLayout(control_panel)
-        control_panel.setFixedWidth(320)
+        control_panel.setFixedWidth(340)
         self.layout.addWidget(control_panel)
 
         # Input Dimensions
-        input_group = QGroupBox("Input Dimensions")
+        input_group = QGroupBox("Input Volume (H, W, C_in)")
         input_layout = QVBoxLayout()
         self.spin_h = self.create_spinbox("Input H:", self.H, input_layout)
         self.spin_w = self.create_spinbox("Input W:", self.W, input_layout)
+        self.spin_cin = self.create_spinbox("Input C:", self.C_in, input_layout)
         input_group.setLayout(input_layout)
         control_layout.addWidget(input_group)
 
         # Kernel Dimensions
-        kernel_group = QGroupBox("Kernel Dimensions")
+        kernel_group = QGroupBox("Kernel Volume (KH, KW, C_in, C_out)")
         kernel_layout = QVBoxLayout()
-        self.spin_kh = self.create_spinbox("Kernel KH:", self.KH, kernel_layout)
-        self.spin_kw = self.create_spinbox("Kernel KW:", self.KW, kernel_layout)
+        self.spin_kh = self.create_spinbox("Kernel H:", self.KH, kernel_layout)
+        self.spin_kw = self.create_spinbox("Kernel W:", self.KW, kernel_layout)
+        self.spin_cout = self.create_spinbox("Output C:", self.C_out, kernel_layout)
         kernel_group.setLayout(kernel_layout)
         control_layout.addWidget(kernel_group)
 
@@ -78,22 +82,27 @@ class ConvMainWindow(QMainWindow):
         param_group.setLayout(param_layout)
         control_layout.addWidget(param_group)
 
+        # Tensor Core params
+        tc_group = QGroupBox("Tensor Core Size")
+        tc_layout = QVBoxLayout()
+        self.spin_tc_m = self.create_spinbox("TC M:", self.TC_M, tc_layout)
+        self.spin_tc_n = self.create_spinbox("TC N:", self.TC_N, tc_layout)
+        self.spin_tc_k = self.create_spinbox("TC K:", self.TC_K, tc_layout)
+        tc_group.setLayout(tc_layout)
+        control_layout.addWidget(tc_group)
+
         # Algorithm Selection
-        algo_group = QGroupBox("Dataflow / Traversal Order")
+        algo_group = QGroupBox("Tensor Core Dataflow")
         algo_layout = QVBoxLayout()
 
         self.combo_algo = QComboBox()
         self.combo_algo.addItems([
-            "Output Stationary (OS) - Sequential",
-            "Output Stationary (OS) - Systolic Wavefront",
-            "Weight Stationary (WS) - Sequential",
-            "Weight Stationary (WS) - Systolic Array",
-            "Input Stationary (IS) - Sequential",
-            "Input Stationary (IS) - Systolic",
-            "Row Stationary (RS) - Sequential",
-            "Row Stationary (RS) - Systolic",
+            "Output Stationary (OS) - Classic Tensor Core",
+            "Weight Stationary (WS) - Kernel Fixed",
+            "Input Stationary (IS) - Input Fixed",
+            "Systolic Wavefront - Pipelined",
         ])
-        algo_layout.addWidget(QLabel("Type:"))
+        algo_layout.addWidget(QLabel("Traversal Order:"))
         algo_layout.addWidget(self.combo_algo)
 
         algo_group.setLayout(algo_layout)
@@ -113,8 +122,8 @@ class ConvMainWindow(QMainWindow):
 
         play_layout.addWidget(QLabel("Speed (ms delay):"))
         self.slider_speed = QSlider(Qt.Orientation.Horizontal)
-        self.slider_speed.setRange(10, 1000)
-        self.slider_speed.setValue(300)
+        self.slider_speed.setRange(10, 1500)
+        self.slider_speed.setValue(500)
         self.slider_speed.valueChanged.connect(self.update_speed)
         play_layout.addWidget(self.slider_speed)
 
@@ -143,10 +152,15 @@ class ConvMainWindow(QMainWindow):
         legend_group = QGroupBox("Legend")
         legend_layout = QVBoxLayout()
         legend_text = QLabel(
-            "<span style='color:#993333;'>■ Input</span><br>"
+            "<b>Layout:</b><br>"
+            "<span style='color:#993333;'>■ Input Volume</span> | "
             "<span style='color:#334D99;'>■ Kernel</span><br>"
-            "<span style='color:#338080;'>■ Output</span><br>"
-            "<span style='color:#76C800;'>■ Active MAC</span><br>"
+            "<span style='color:#338080;'>■ Output</span> | "
+            "<span style='color:#76C800;'>■ Tensor Core MAC</span><br><br>"
+            "<b>Keys:</b><br>"
+            "Space: Play/Pause<br>"
+            "F: Step Forward<br>"
+            "Mouse: Rotate/Zoom"
         )
         legend_layout.addWidget(legend_text)
         legend_group.setLayout(legend_layout)
@@ -161,7 +175,7 @@ class ConvMainWindow(QMainWindow):
         l = QLabel(label)
         layout.addWidget(l)
         s = QSpinBox()
-        s.setRange(1, 64)
+        s.setRange(1, 32)
         s.setValue(initial)
         s.valueChanged.connect(self.update_dims)
         layout.addWidget(s)
@@ -174,23 +188,37 @@ class ConvMainWindow(QMainWindow):
 
         self.H = self.spin_h.value()
         self.W = self.spin_w.value()
+        self.C_in = self.spin_cin.value()
+        self.C_out = self.spin_cout.value()
         self.KH = self.spin_kh.value()
         self.KW = self.spin_kw.value()
         self.stride = self.spin_stride.value()
         self.padding = self.spin_padding.value()
+        self.TC_M = self.spin_tc_m.value()
+        self.TC_N = self.spin_tc_n.value()
+        self.TC_K = self.spin_tc_k.value()
 
         self.visualizer = ConvVisualizer3D(
-            self.H, self.W, self.KH, self.KW,
-            self.stride, self.padding,
+            self.H, self.W, self.C_in, self.C_out,
+            self.KH, self.KW, self.stride, self.padding,
+            self.TC_M, self.TC_N, self.TC_K,
             key_event_callback=self.handle_visualizer_key
         )
         self.viz_layout.addWidget(self.visualizer)
 
-        # Calculate and display output dimensions
+        # Calculate and display dimensions
         OH = (self.H + 2 * self.padding - self.KH) // self.stride + 1
         OW = (self.W + 2 * self.padding - self.KW) // self.stride + 1
-        total_ops = OH * OW * self.KH * self.KW
-        self.lbl_info.setText(f"Output: {OH}x{OW}\nTotal MACs: {total_ops}")
+        M_total = OH * OW * self.C_out
+        K_total = self.KH * self.KW * self.C_in
+        total_ops = M_total * K_total
+
+        self.lbl_info.setText(
+            f"Output: {OH}x{OW}x{self.C_out}<br>"
+            f"Output Space (M): {M_total}<br>"
+            f"Reduction (K): {K_total}<br>"
+            f"Total MACs: {total_ops}"
+        )
 
         # Reset iterator
         self.iterator = None
@@ -237,49 +265,29 @@ class ConvMainWindow(QMainWindow):
         self.total_macs = 0
 
         if "Output Stationary" in algo_text:
-            if "Systolic" in algo_text:
-                self.iterator = OutputStationarySystolicIterator(
-                    self.H, self.W, self.KH, self.KW,
-                    self.stride, self.padding, array_size=4
-                )
-            else:
-                self.iterator = OutputStationaryIterator(
-                    self.H, self.W, self.KH, self.KW,
-                    self.stride, self.padding
-                )
+            self.iterator = TensorCoreOutputStationaryIterator(
+                self.H, self.W, self.C_in, self.C_out,
+                self.KH, self.KW, self.stride, self.padding,
+                self.TC_M, self.TC_N, self.TC_K
+            )
         elif "Weight Stationary" in algo_text:
-            if "Systolic" in algo_text:
-                self.iterator = WeightStationarySystolicIterator(
-                    self.H, self.W, self.KH, self.KW,
-                    self.stride, self.padding, array_size=4
-                )
-            else:
-                self.iterator = WeightStationaryIterator(
-                    self.H, self.W, self.KH, self.KW,
-                    self.stride, self.padding
-                )
+            self.iterator = TensorCoreWeightStationaryIterator(
+                self.H, self.W, self.C_in, self.C_out,
+                self.KH, self.KW, self.stride, self.padding,
+                self.TC_M, self.TC_N, self.TC_K
+            )
         elif "Input Stationary" in algo_text:
-            if "Systolic" in algo_text:
-                self.iterator = InputStationarySystolicIterator(
-                    self.H, self.W, self.KH, self.KW,
-                    self.stride, self.padding, array_size=4
-                )
-            else:
-                self.iterator = InputStationaryIterator(
-                    self.H, self.W, self.KH, self.KW,
-                    self.stride, self.padding
-                )
-        elif "Row Stationary" in algo_text:
-            if "Systolic" in algo_text:
-                self.iterator = RowStationarySystolicIterator(
-                    self.H, self.W, self.KH, self.KW,
-                    self.stride, self.padding, array_size=4
-                )
-            else:
-                self.iterator = RowStationaryIterator(
-                    self.H, self.W, self.KH, self.KW,
-                    self.stride, self.padding
-                )
+            self.iterator = TensorCoreInputStationaryIterator(
+                self.H, self.W, self.C_in, self.C_out,
+                self.KH, self.KW, self.stride, self.padding,
+                self.TC_M, self.TC_N, self.TC_K
+            )
+        elif "Systolic Wavefront" in algo_text:
+            self.iterator = TensorCoreSystolicIterator(
+                self.H, self.W, self.C_in, self.C_out,
+                self.KH, self.KW, self.stride, self.padding,
+                self.TC_M, self.TC_N, self.TC_K
+            )
 
         self.generator = self.iterator.run()
 
@@ -290,17 +298,17 @@ class ConvMainWindow(QMainWindow):
         try:
             step = next(self.generator)
 
-            if step.active:
+            if step.active_macs:
                 self.current_cycle += 1
-                macs_in_step = len(step.active)
+                macs_in_step = len(step.active_macs)
                 self.total_macs += macs_in_step
 
                 avg_ops = self.total_macs / self.current_cycle if self.current_cycle > 0 else 0
 
                 stats_text = (
-                    f"Cycle: {self.current_cycle}\n"
-                    f"MACs this step: {macs_in_step}\n"
-                    f"Total MACs: {self.total_macs}\n"
+                    f"Cycle: {self.current_cycle}<br>"
+                    f"MACs this step: {macs_in_step}<br>"
+                    f"Total MACs: {self.total_macs}<br>"
                     f"Avg MACs/Cycle: {avg_ops:.2f}"
                 )
                 self.lbl_stats.setText(stats_text)
