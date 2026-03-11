@@ -67,15 +67,15 @@ class ConvVisualizer3D(gl.GLViewWidget):
         self.color_active = np.array([0.46, 0.78, 0.0, 0.95])    # NVIDIA Green
         self.color_done = np.array([0.2, 0.5, 0.2, 0.7])
 
-        # Volume colors
-        self.base_color_input = np.array([0.7, 0.2, 0.2, 0.8])     # Red
-        self.active_color_input = np.array([1.0, 0.3, 0.3, 1.0])    # Bright Red
+        # Volume colors - dim base, bright active for contrast
+        self.base_color_input = np.array([0.4, 0.15, 0.15, 0.5])    # Dim Red
+        self.active_color_input = np.array([1.0, 0.1, 0.1, 1.0])    # Bright Red
 
-        self.base_color_kernel = np.array([0.2, 0.3, 0.7, 0.8])    # Blue
-        self.active_color_kernel = np.array([0.3, 0.5, 1.0, 1.0])   # Bright Blue
+        self.base_color_kernel = np.array([0.15, 0.2, 0.5, 0.5])    # Dim Blue
+        self.active_color_kernel = np.array([0.1, 0.4, 1.0, 1.0])   # Bright Blue
 
-        self.base_color_output = np.array([0.2, 0.6, 0.6, 0.8])    # Cyan
-        self.active_color_output = np.array([0.0, 1.0, 0.8, 1.0])   # Bright Cyan
+        self.base_color_output = np.array([0.15, 0.4, 0.4, 0.5])    # Dim Cyan
+        self.active_color_output = np.array([0.0, 1.0, 0.9, 1.0])   # Bright Cyan
 
         self.cube_size = 0.7
         self.quad_size = 0.9
@@ -324,35 +324,32 @@ class ConvVisualizer3D(gl.GLViewWidget):
         tc_face_colors = np.repeat(tc_current, 12, axis=0)
         self.update_mesh_colors(self.tc_mesh, self.tc_verts, self.tc_faces, tc_face_colors)
 
-        # Update Input Volume
-        input_current = self.input_colors_state.copy()
+        # Update Input Volume - save to state so it stays highlighted
         for h, w, c in step.active_input:
             if 0 <= h < self.H and 0 <= w < self.W and 0 <= c < self.C_in:
                 idx = self.get_input_index(h, w, c)
-                input_current[idx] = self.active_color_input
+                self.input_colors_state[idx] = self.active_color_input
 
-        input_face_colors = np.repeat(input_current, 12, axis=0)
+        input_face_colors = np.repeat(self.input_colors_state, 12, axis=0)
         self.update_mesh_colors(self.input_mesh, self.input_verts, self.input_faces, input_face_colors)
 
-        # Update Kernel Volume
-        kernel_current = self.kernel_colors_state.copy()
+        # Update Kernel Volume - save to state
         for kh, kw, ci, co in step.active_kernel:
             if (0 <= kh < self.KH and 0 <= kw < self.KW and
                 0 <= ci < self.C_in and 0 <= co < self.C_out):
                 idx = self.get_kernel_index(kh, kw, ci, co)
-                kernel_current[idx] = self.active_color_kernel
+                self.kernel_colors_state[idx] = self.active_color_kernel
 
-        kernel_face_colors = np.repeat(kernel_current, 12, axis=0)
+        kernel_face_colors = np.repeat(self.kernel_colors_state, 12, axis=0)
         self.update_mesh_colors(self.kernel_mesh, self.kernel_verts, self.kernel_faces, kernel_face_colors)
 
-        # Update Output Volume
-        output_current = self.output_colors_state.copy()
+        # Update Output Volume - save to state
         for oh, ow, co in step.active_output:
             if 0 <= oh < self.OH and 0 <= ow < self.OW and 0 <= co < self.C_out:
                 idx = self.get_output_index(oh, ow, co)
-                output_current[idx] = self.active_color_output
+                self.output_colors_state[idx] = self.active_color_output
 
-        output_face_colors = np.repeat(output_current, 12, axis=0)
+        output_face_colors = np.repeat(self.output_colors_state, 12, axis=0)
         self.update_mesh_colors(self.output_mesh, self.output_verts, self.output_faces, output_face_colors)
 
     def reset_simulation(self):
