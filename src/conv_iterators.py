@@ -82,9 +82,9 @@ class TensorCoreOutputStationaryIterator(TensorCoreConvIterator):
                 k_size = min(self.TC_K, self.K_total - k_tile)
 
                 active_macs = []
-                active_input = []
-                active_kernel = []
-                active_output = []
+                active_input_set = set()
+                active_kernel_set = set()
+                active_output_set = set()
 
                 # Within a tile, all MAC operations are active
                 # (In real hardware, this happens in one tensor core instruction)
@@ -95,7 +95,7 @@ class TensorCoreOutputStationaryIterator(TensorCoreConvIterator):
                     ow = rem % self.OW
                     oh = rem // self.OW
 
-                    active_output.append((oh, ow, c_out))
+                    active_output_set.add((oh, ow, c_out))
 
                     for k in range(k_tile, k_tile + k_size):
                         # Map k back to kernel/input coordinates
@@ -109,9 +109,9 @@ class TensorCoreOutputStationaryIterator(TensorCoreConvIterator):
                         iw = ow * self.stride - self.padding + kw
 
                         if 0 <= ih < self.H and 0 <= iw < self.W:
-                            active_input.append((ih, iw, c_in))
+                            active_input_set.add((ih, iw, c_in))
 
-                        active_kernel.append((kh, kw, c_in, c_out))
+                        active_kernel_set.add((kh, kw, c_in, c_out))
 
                         # MAC coordinate within tensor core tile
                         tc_m = m - m_tile
@@ -121,6 +121,10 @@ class TensorCoreOutputStationaryIterator(TensorCoreConvIterator):
                         # In a full matmul, n would be another dimension
                         for tc_n in range(min(self.TC_N, 4)):
                             active_macs.append((tc_m, tc_n, tc_k))
+
+                active_input = list(active_input_set)
+                active_kernel = list(active_kernel_set)
+                active_output = list(active_output_set)
 
                 yield ConvIterationStep(
                     active_macs=active_macs,

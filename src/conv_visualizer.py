@@ -8,18 +8,12 @@ class ConvVisualizer3D(gl.GLViewWidget):
     """
     3D Visualizer for 2D Convolution on Tensor Core.
 
-    Shows:
-    - Left: Input Volume (H, W, C_in) as 3D cube
-    - Right: Kernel Volume (KH, KW, C_in, C_out) as 3D cube (flattened C_in*C_out)
-    - Center: Tensor Core MAC Array (M, N, K)
-    - Back: Output Volume (OH, OW, C_out) as 3D cube
-
     Layout:
-        Input     TC MACs    Output
-          [HWC]    [M,N,K]    [OHWCo]
+        Input Volume    Tensor Core MACs    Output Volume
+          [H,W,Ci]  →     [M,N,K]     →    [Oh,Ow,Co]
 
-                    Kernel
-                   [K,K,Ci,Co]
+                        Kernel Volume
+                        [Kh,Kw,Ci,Co]
     """
 
     def __init__(self, H, W, C_in, C_out, KH=3, KW=3, stride=1, padding=0,
@@ -37,7 +31,7 @@ class ConvVisualizer3D(gl.GLViewWidget):
         self.OH = (H + 2 * padding - KH) // stride + 1
         self.OW = (W + 2 * padding - KW) // stride + 1
 
-        # Tensor Core dimensions (for visualization, keep small)
+        # Tensor Core dimensions (keep small for visualization)
         self.TC_M = min(tc_m, 16)
         self.TC_N = min(tc_n, 4)
         self.TC_K = min(tc_k, 16)
@@ -49,16 +43,21 @@ class ConvVisualizer3D(gl.GLViewWidget):
         # Camera setup
         self.setCameraPosition(elevation=25, azimuth=40)
 
-        # View center
-        center_x = (W + self.TC_N + self.OW) / 2 + 5
-        center_y = max(H, C_in, KH * KW, self.TC_M, self.OH) / 2
-        center_z = max(C_in, self.TC_K, C_out) / 2
+        # Calculate layout spacing
+        input_width = C_in
+        tc_width = self.TC_N
+        output_width = C_out
+        total_width = input_width + tc_width + output_width + 10
+
+        center_x = total_width / 2
+        center_y = max(H, self.OH, self.TC_M, KH * KW) / 2
+        center_z = max(W, self.OW, self.TC_K, max(C_in, C_out)) / 2
         self.opts['center'] = QVector3D(center_x, center_y, center_z)
 
         # Orthographic projection
         self.opts['fov'] = 1
         max_dim = max(H, W, C_in, C_out, self.OH, self.OW, self.TC_M, self.TC_K)
-        self.opts['distance'] = max_dim * 180
+        self.opts['distance'] = max_dim * 200
 
         self.setBackgroundColor('#ffffff')
 
@@ -68,17 +67,16 @@ class ConvVisualizer3D(gl.GLViewWidget):
         self.color_done = np.array([0.2, 0.5, 0.2, 0.7])
 
         # Volume colors - dim base, bright active for contrast
-        self.base_color_input = np.array([0.4, 0.15, 0.15, 0.5])    # Dim Red
+        self.base_color_input = np.array([0.35, 0.15, 0.15, 0.4])    # Dim Red
         self.active_color_input = np.array([1.0, 0.1, 0.1, 1.0])    # Bright Red
 
-        self.base_color_kernel = np.array([0.15, 0.2, 0.5, 0.5])    # Dim Blue
+        self.base_color_kernel = np.array([0.15, 0.2, 0.45, 0.4])    # Dim Blue
         self.active_color_kernel = np.array([0.1, 0.4, 1.0, 1.0])   # Bright Blue
 
-        self.base_color_output = np.array([0.15, 0.4, 0.4, 0.5])    # Dim Cyan
+        self.base_color_output = np.array([0.15, 0.4, 0.4, 0.4])    # Dim Cyan
         self.active_color_output = np.array([0.0, 1.0, 0.9, 1.0])   # Bright Cyan
 
-        self.cube_size = 0.7
-        self.quad_size = 0.9
+        self.cube_size = 0.75
 
         # Setup all visual elements
         self.setup_input_volume()
@@ -123,17 +121,20 @@ class ConvVisualizer3D(gl.GLViewWidget):
         return h * self.W * self.C_in + w * self.C_in + c
 
     def setup_input_volume(self):
-        """Input Volume: H (vertical), W (depth), C_in (horizontal)"""
+        """Input Volume: positioned on the left"""
         positions = []
-        x_offset = 0
+        self.input_coord_map = {}  # (h,w,c) -> index
+        idx = 0
         for h in range(self.H):
             for w in range(self.W):
                 for c in range(self.C_in):
-                    # x = channel, y = height, z = width
-                    x = x_offset + c
+                    # Layout: x=channel, y=height, z=width
+                    x = c
                     y = h
                     z = w
                     positions.append([x, y, z])
+                    self.input_coord_map[(h, w, c)] = idx
+                    idx += 1
 
         self.input_positions = np.array(positions, dtype=np.float32)
 
@@ -159,9 +160,6 @@ class ConvVisualizer3D(gl.GLViewWidget):
         )
         self.addItem(self.input_mesh)
 
-        # Add label (visual cue)
-        self.input_x_offset = x_offset
-
     # ========================================================================
     # Kernel Volume Setup
     # ========================================================================
@@ -172,9 +170,10 @@ class ConvVisualizer3D(gl.GLViewWidget):
     def setup_kernel_volume(self):
         """Kernel Volume: positioned below everything"""
         positions = []
-        # Position kernel below the main view
+        self.kernel_coord_map = {}
+        idx = 0
         y_base = -max(self.H, self.OH, self.TC_M) - 5
-        x_offset = self.input_x_offset + self.C_in + 3
+        x_offset = self.C_in + 3
 
         for kh in range(self.KH):
             for kw in range(self.KW):
@@ -184,6 +183,8 @@ class ConvVisualizer3D(gl.GLViewWidget):
                         y = y_base + kh
                         z = kw * (self.C_in + 1) + ci
                         positions.append([x, y, z])
+                        self.kernel_coord_map[(kh, kw, ci, co)] = idx
+                        idx += 1
 
         self.kernel_positions = np.array(positions, dtype=np.float32)
 
@@ -219,7 +220,9 @@ class ConvVisualizer3D(gl.GLViewWidget):
     def setup_output_volume(self):
         """Output Volume: positioned on the right"""
         positions = []
-        x_offset = self.input_x_offset + self.C_in + self.TC_N + 6
+        self.output_coord_map = {}
+        idx = 0
+        x_offset = self.C_in + self.TC_N + 6
 
         for oh in range(self.OH):
             for ow in range(self.OW):
@@ -228,6 +231,8 @@ class ConvVisualizer3D(gl.GLViewWidget):
                     y = oh
                     z = ow
                     positions.append([x, y, z])
+                    self.output_coord_map[(oh, ow, co)] = idx
+                    idx += 1
 
         self.output_positions = np.array(positions, dtype=np.float32)
 
@@ -263,7 +268,7 @@ class ConvVisualizer3D(gl.GLViewWidget):
     def setup_tensor_core_array(self):
         """Tensor Core MAC Array in the center."""
         positions = []
-        x_offset = self.input_x_offset + self.C_in + 2
+        x_offset = self.C_in + 2
 
         for m in range(self.TC_M):
             for n in range(self.TC_N):
@@ -324,29 +329,31 @@ class ConvVisualizer3D(gl.GLViewWidget):
         tc_face_colors = np.repeat(tc_current, 12, axis=0)
         self.update_mesh_colors(self.tc_mesh, self.tc_verts, self.tc_faces, tc_face_colors)
 
-        # Update Input Volume - save to state so it stays highlighted
+        # Update Input Volume - use coord_map for reliability
         for h, w, c in step.active_input:
-            if 0 <= h < self.H and 0 <= w < self.W and 0 <= c < self.C_in:
-                idx = self.get_input_index(h, w, c)
+            key = (h, w, c)
+            if key in self.input_coord_map:
+                idx = self.input_coord_map[key]
                 self.input_colors_state[idx] = self.active_color_input
 
         input_face_colors = np.repeat(self.input_colors_state, 12, axis=0)
         self.update_mesh_colors(self.input_mesh, self.input_verts, self.input_faces, input_face_colors)
 
-        # Update Kernel Volume - save to state
+        # Update Kernel Volume
         for kh, kw, ci, co in step.active_kernel:
-            if (0 <= kh < self.KH and 0 <= kw < self.KW and
-                0 <= ci < self.C_in and 0 <= co < self.C_out):
-                idx = self.get_kernel_index(kh, kw, ci, co)
+            key = (kh, kw, ci, co)
+            if key in self.kernel_coord_map:
+                idx = self.kernel_coord_map[key]
                 self.kernel_colors_state[idx] = self.active_color_kernel
 
         kernel_face_colors = np.repeat(self.kernel_colors_state, 12, axis=0)
         self.update_mesh_colors(self.kernel_mesh, self.kernel_verts, self.kernel_faces, kernel_face_colors)
 
-        # Update Output Volume - save to state
+        # Update Output Volume
         for oh, ow, co in step.active_output:
-            if 0 <= oh < self.OH and 0 <= ow < self.OW and 0 <= co < self.C_out:
-                idx = self.get_output_index(oh, ow, co)
+            key = (oh, ow, co)
+            if key in self.output_coord_map:
+                idx = self.output_coord_map[key]
                 self.output_colors_state[idx] = self.active_color_output
 
         output_face_colors = np.repeat(self.output_colors_state, 12, axis=0)
